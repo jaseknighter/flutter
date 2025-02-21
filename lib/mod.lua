@@ -17,7 +17,6 @@ local controlspec = require 'controlspec'
 local state = {
   mod_params_inited = false,
   last_shape = "lin",
-  last_delay = 0,
   debouncing = false
 }
 
@@ -31,8 +30,8 @@ local function set_asl(reset)
       local ramp = params:get("ramp")
       local curve = params:string("curve")
       local intone = params:get("intone")
-      local delay = params:get("phase")
-      if reset or delay ~= state.last_delay then state.last_shape = nil end -- if there is a delay, set last_shape to nil to reset the asl
+      -- local delay = params:get("phase")
+      if reset then state.last_shape = nil end 
       if curve == "square" then
         if state.last_shape ~= "square" then
           print("square")
@@ -100,24 +99,6 @@ local function set_asl(reset)
         end 
 
         if asl then 
-          local delay_time
-          if delay < 0 then
-            delay_time = util.linlin(-5,0,0,1,delay)
-          else
-            delay_time = util.linlin(0,10,0,1,delay)
-          end
-      
-          if (i > 1) then 
-            if (state.last_shape == "square") then
-              delay_time = (freq*delay_time*4)/i
-              print(i,delay_time)
-              clock.sleep(delay_time) 
-            else
-              delay_time = (freq*delay_time*4)/i
-              print(i,delay_time)
-              clock.sleep(delay_time) 
-            end
-          end
           crow.output[i].action = asl 
         end
 
@@ -141,7 +122,7 @@ local function set_asl(reset)
 end
 
 local function init_params()
-  params:add_group("flutter",6)
+  params:add_group("flutter",5)
   params:add_taper("freq","freq",5,0.001,0.3)
   params:set_action("freq",function(val) 
     set_asl()
@@ -158,10 +139,10 @@ local function init_params()
   params:set_action("intone",function(val) 
     set_asl()
   end)
-  params:add_control("phase","phase",controlspec.new(-5,10,"lin",0.1,0,nil,0.1/11))
-  params:set_action("phase",function(val) 
-    set_asl(nil)
-  end)
+  -- params:add_control("phase","phase",controlspec.new(-5,10,"lin",0.1,0,nil,0.1/11))
+  -- params:set_action("phase",function(val) 
+  --   set_asl(nil)
+  -- end)
   
 
   params:add_trigger("reset","reset")
