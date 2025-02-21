@@ -17,144 +17,191 @@ local controlspec = require 'controlspec'
 local state = {
   mod_params_inited = false,
   last_shape = "lin",
-  debouncing = false
+  debouncing = {false,false,false,false},
+  last_freq = nil,
+  last_ramp = nil,
+  last_curve = nil,
+  last_intone = nil
 }
 
-local function set_asl(reset)
-  if state.debouncing == false then
-    clock.run(function() 
-      -- print("set asl")
-      state.debouncing = true
-      local rise,wait_top,wait_bottom,fall,asl
-      local freq = params:get("freq")
-      local ramp = params:get("ramp")
-      local curve = params:string("curve")
-      local intone = params:get("intone")
-      -- local delay = params:get("phase")
-      if reset then state.last_shape = nil end 
-      if curve == "square" then
-        if state.last_shape ~= "square" then
-          print("square")
-          rise = "to(dyn{rise_level=5},dyn{rise_time=0.01},'now')"
-          wait_top = "to(dyn{rise_level=5},dyn{wait_time_top=0.3},'wait')"
-          fall = "to(dyn{fall_level=0},dyn{fall_time=0.01},'now')"
-          wait_bottom = "to(dyn{fall_level=0},dyn{wait_time_bottom=0.3},'wait')"
-          asl = "loop{" .. rise .. "," .. wait_top .. "," .. fall .. "," .. wait_bottom .."}"
-          state.last_shape = "square"
-        end
-      elseif curve == "log" then
-        if state.last_shape ~= "log" then
-          print("log")
-          rise = "to(dyn{rise_level=5},dyn{rise_time=0.3},'log')"
-          fall = "to(dyn{fall_level=0},dyn{fall_time=0.3},'log')"
-          asl = "loop{" .. rise .. "," .. fall .."}"
-          state.last_shape = "log"
-        end
-      elseif curve == "lin" then
-        if state.last_shape ~= "lin" then
-          print("lin")
-          rise = "to(dyn{rise_level=5},dyn{rise_time=0.3},'lin')"
-          fall = "to(dyn{fall_level=0},dyn{fall_time=0.3},'lin')"
-          asl = "loop{" .. rise .. "," .. fall .."}"
-          state.last_shape = "lin"
-        end
-      elseif curve == "exp" then
-        if state.last_shape ~= "exp" then
-          print("exp")
-          rise = "to(dyn{rise_level=5},dyn{rise_time=0.3},'exp')"
-          fall = "to(dyn{fall_level=0},dyn{fall_time=0.3},'exp')"
-          asl = "loop{" .. rise .. "," .. fall .."}"
-          state.last_shape = "exp"
-        end
-      elseif curve == "sine" then
-        if state.last_shape ~= "sine" then
-          print("sine")
-          rise = "to(dyn{rise_level=5},dyn{rise_time=0.3},'sine')"
-          fall = "to(dyn{fall_level=0},dyn{fall_time=0.3},'sine')"
-          asl = "loop{" .. rise .. "," .. fall .."}"
-          state.last_shape = "sine"
-        end
-      end
-
-
-      local rise_time = util.linlin(-5,10,0.001,1,ramp) 
-      local wait_time_top = util.linlin(-5,10,0.001,1,ramp)
-      local fall_time = util.linlin(-5,10,1,0.001,ramp) 
-      local wait_time_bottom = util.linlin(-5,10,0.5,0.0005,ramp)
-
-      if intone < 0 then 
-        intone = util.linlin(-5,0,0,0.5,intone)
-      else
-        intone = util.linlin(0,10,0.5,1,intone)
-      end
-
-      for i=1,4 do        
-        local intone_mult 
-        if i == 1 or intone == 0.5 then
-          intone_mult = 1
-        elseif intone < 0.5 then
-          intone_mult = util.linlin(0,0.5,i,1,intone) 
-        else
-          intone_mult = util.linlin(0.5,1,1,1/i,intone) 
-        end 
-
-        if asl then 
-          crow.output[i].action = asl 
-        end
-
-        if state.last_shape == "square" then  
-          crow.output[i].dyn.rise_time = 0.01
-          crow.output[i].dyn.rise_time = 0.01
-          crow.output[i].dyn.wait_time_top = wait_time_top * freq * (intone_mult)
-          crow.output[i].dyn.fall_time = 0.01
-          crow.output[i].dyn.wait_time_bottom = wait_time_bottom * freq * (intone_mult)
-        else
-          crow.output[i].dyn.rise_time = rise_time * freq * (intone_mult)
-          crow.output[i].dyn.fall_time = fall_time * freq * (intone_mult)
-        end
-        -- crow.output[i]()
-      end
-      -- clock.sleep(0.01)
-      state.debouncing = false
-    end)
+local function update_asl(ix,reset,new_shape)
+  local rise,wait_top,wait_bottom,fall,asl
+  local freq = params:get("freq")/1000
+  local ramp = params:get("ramp")
+  local curve = params:string("curve")
+  local intone = params:get("intone")
+  -- local delay = params:get("phase")
+  if (reset == true or new_shape == true) then state.last_shape = nil end 
+  if curve == "square" then
+    if new_shape == true or state.last_shape ~= "square" then
+      -- print("square")
+      rise = "to(dyn{rise_level=5},dyn{rise_time=0.01},'now')"
+      wait_top = "to(dyn{rise_level=5},dyn{wait_time_top=0.3},'wait')"
+      fall = "to(dyn{fall_level=0},dyn{fall_time=0.01},'now')"
+      wait_bottom = "to(dyn{fall_level=0},dyn{wait_time_bottom=0.3},'wait')"
+      asl = rise .. "," .. wait_top .. "," .. fall .. "," .. wait_bottom
+      -- asl = "loop{" .. rise .. "," .. wait_top .. "," .. fall .. "," .. wait_bottom .."}"
+      state.last_shape = "square"
+    end
+  elseif curve == "log" then
+    if state.last_shape ~= "log" then
+      -- print("log")
+      rise = "to(dyn{rise_level=5},dyn{rise_time=0.3},'log')"
+      wait_top = "to(dyn{rise_level=5},dyn{wait_time_top=0},'wait')"
+      fall = "to(dyn{fall_level=0},dyn{fall_time=0.3},'log')"
+      wait_bottom = "to(dyn{fall_level=0},dyn{wait_time_bottom=0},'wait')"
+      asl = rise .. "," .. wait_top .. ",".. fall .. "," .. wait_bottom
+      -- asl = "loop{" .. rise .. "," .. fall .."}"
+      state.last_shape = "log"
+    end
+  elseif curve == "lin" then
+    if state.last_shape ~= "lin" then
+      -- print("lin")
+      rise = "to(dyn{rise_level=5},dyn{rise_time=0.3},'lin')"
+      wait_top = "to(dyn{rise_level=5},dyn{wait_time_top=0},'wait')"
+      fall = "to(dyn{fall_level=0},dyn{fall_time=0.3},'lin')"
+      wait_bottom = "to(dyn{fall_level=0},dyn{wait_time_bottom=0},'wait')"
+      asl = rise .. "," .. wait_top .. ",".. fall .. "," .. wait_bottom
+      -- asl = "loop{" .. rise .. "," .. fall .."}"
+      state.last_shape = "lin"
+      -- print("lin again")
+    end
+  elseif curve == "exp" then
+    if state.last_shape ~= "exp" then
+      -- print("exp")
+      rise = "to(dyn{rise_level=5},dyn{rise_time=0.3},'exp')"
+      wait_top = "to(dyn{rise_level=5},dyn{wait_time_top=0},'wait')"
+      fall = "to(dyn{fall_level=0},dyn{fall_time=0.3},'exp')"
+      wait_bottom = "to(dyn{fall_level=0},dyn{wait_time_bottom=0},'wait')"
+      asl = rise .. "," .. wait_top .. ",".. fall .. "," .. wait_bottom
+      -- asl = "loop{" .. rise .. "," .. fall .."}"
+      state.last_shape = "exp"
+    end
+  elseif curve == "sine" then
+    if state.last_shape ~= "sine" then
+      -- print("sine")
+      rise = "to(dyn{rise_level=5},dyn{rise_time=0.3},'sine')"
+      wait_top = "to(dyn{rise_level=5},dyn{wait_time_top=0},'wait')"
+      fall = "to(dyn{fall_level=0},dyn{fall_time=0.3},'sine')"
+      wait_bottom = "to(dyn{fall_level=0},dyn{wait_time_bottom=0},'wait')"
+      asl = rise .. "," .. wait_top .. ",".. fall .. "," .. wait_bottom
+      -- asl = "loop{" .. rise .. "," .. fall .."}"
+      state.last_shape = "sine"
+    end
   end
+
+
+  local rise_time = util.linlin(-5,10,0.001,1,ramp) 
+  local wait_time_top = util.linlin(-5,10,0.001,1,ramp)
+  local fall_time = util.linlin(-5,10,1,0.001,ramp) 
+  local wait_time_bottom = util.linlin(-5,10,0.5,0.0005,ramp)
+
+  if intone < 0 then 
+    intone = util.linlin(-5,0,0,0.5,intone)
+  else
+    intone = util.linlin(0,10,0.5,1,intone)
+  end
+
+  -- for i=1,4 do        
+    local intone_mult 
+    if ix == 1 or intone == 0.5 then
+      intone_mult = 1
+    elseif intone < 0.5 then
+      intone_mult = util.linlin(0,0.5,ix,1,intone) 
+    else
+      intone_mult = util.linlin(0.5,1,1,1/ix,intone) 
+    end 
+
+    if asl then 
+      asl = "loop{" .. asl .. "}" 
+      crow.output[ix].action = asl
+      crow.output[ix]()
+    end
+
+    if curve == "square" then  
+      crow.output[ix].dyn.rise_time = 0.01
+      crow.output[ix].dyn.rise_time = 0.01
+      crow.output[ix].dyn.wait_time_top = wait_time_top * freq * (intone_mult)
+      crow.output[ix].dyn.fall_time = 0.01
+      crow.output[ix].dyn.wait_time_bottom = wait_time_bottom * freq * (intone_mult)
+    else
+      crow.output[ix].dyn.rise_time = rise_time * freq * (intone_mult)
+      crow.output[ix].dyn.fall_time = fall_time * freq * (intone_mult)
+    end
+    -- crow.output[i]()
   
 end
 
+local debounce_time = 0 --0.05
 local function init_params()
   params:add_group("flutter",5)
-  params:add_taper("freq","freq",5,0.001,0.3)
+  -- params:add_taper("freq","freq",5,0.001,0.3)
+  params:add_control("freq","freq",controlspec.new(10,5000,"lin",1,300,"ms",1/499))
   params:set_action("freq",function(val) 
-    set_asl()
+    for i=1,4 do 
+      if state.debouncing[i] == false and state.last_freq ~= val then
+        state.debouncing[i] = true
+        clock.run(function() 
+          clock.sleep(debounce_time)
+          update_asl(i,false,false)
+          state.debouncing[i] = false
+        end)      
+      end
+    end
+    state.last_freq = val
   end)
   params:add_control("ramp","ramp",controlspec.new(-5,10,"lin",0.1,0,nil,0.1/11))
   params:set_action("ramp",function(val) 
-    set_asl()
+    for i=1,4 do 
+      if state.debouncing[i] == false and state.last_ramp ~= val then
+        state.debouncing[i] = true
+        clock.run(function() 
+          clock.sleep(debounce_time)
+          update_asl(i,false,false)
+          state.debouncing[i] = false
+        end)      
+      end
+    end
+    state.last_ramp = val
   end)
   params:add_option("curve","curve",{"square","log","lin","exp","sine"},3)
-  params:set_action("curve",function()
-    set_asl()
+  params:set_action("curve",function(val)
+    for i=1,4 do 
+      if state.debouncing[i] == false and state.last_curve ~= val then
+        state.debouncing[i] = true
+        clock.run(function() 
+          clock.sleep(debounce_time)
+          update_asl(i,false,true)
+          state.debouncing[i] = false
+        end)      
+      end
+    end
+    state.last_curve = val
   end)
   params:add_control("intone","intone",controlspec.new(-5,10,"lin",0.1,0,nil,0.1/11))
   params:set_action("intone",function(val) 
-    set_asl()
+    for i=1,4 do 
+      if state.debouncing[i] == false and state.last_intone ~= val then
+       state.debouncing[i] = true
+        clock.run(function() 
+          clock.sleep(debounce_time)
+          update_asl(i,false,false)
+          state.debouncing[i] = false
+        end)      
+      end
+    end
+    state.last_intone = val
   end)
-  -- params:add_control("phase","phase",controlspec.new(-5,10,"lin",0.1,0,nil,0.1/11))
-  -- params:set_action("phase",function(val) 
-  --   set_asl(nil)
-  -- end)
-  
-
-  params:add_trigger("reset","reset")
-  params:set_action("reset",function(val) 
-    set_asl(1)
+  params:add_trigger("reset_cycle","reset cycle")
+  params:set_action("reset_cycle",function() 
+    for i=1,4 do 
+      update_asl(i,true,false) 
+      crow.output[i]() 
+    end
   end)
-  
 
   state.mod_params_inited = true
 
-  -- local p = params:lookup_param("curve")
-  -- p:bang()
   print("mod params inited")
 end
 
@@ -163,19 +210,34 @@ end
 --   crow.output[2].dyn.v = volts
 -- end
 
+local function end_of_cycle(out_ix)
+  -- print("end of cycle",out_ix)
+  -- update_asl(out_ix,true,false)
+  -- clock.run(function() 
+    -- clock.sleep(0.01)
+  -- crow.output[out_ix]()
+  -- end)
+  
+end
+
+local function end_of_cycle1() end_of_cycle(1) end
+local function end_of_cycle2() end_of_cycle(2) end
+local function end_of_cycle3() end_of_cycle(3) end
+local function end_of_cycle4() end_of_cycle(4) end
+
+
 local function init_crow()
   local rise = "to(dyn{rise_level=5},dyn{rise_time=0.3},'lin')"
   local fall = "to(dyn{fall_level=0},dyn{fall_time=0.3},'lin')"
   local asl = "loop{" .. rise .. "," .. fall .."}"
-
-  -- local rise = "to(dyn{rise_level=5},dyn{rise_time=0.01},'now')"
-  -- local wait_top = "to(-dyn{fall_level=0},dyn{wait_time_top=0.3},'wait')"
-  -- local fall = "to(-dyn{fall_level=0},dyn{fall_time=0.01},'now')"
-  -- local wait_bottom = "to(-dyn{fall_level=0},dyn{wait_time_bottom=0.15},'wait')"
-  -- local asl = "loop{" .. rise .. "," .. wait_top .. "," .. fall .. "," .. wait_bottom .. "}"
+  -- local asl = "times(1,{" .. rise .. "," .. fall .."})"
   
   for i=1,4 do    
     crow.output[i].action = asl
+    -- if i==1 then crow.output[i].done = end_of_cycle1 end
+    -- if i==2 then crow.output[i].done = end_of_cycle2 end
+    -- if i==3 then crow.output[i].done = end_of_cycle3 end
+    -- if i==4 then crow.output[i].done = end_of_cycle4 end
     crow.output[i]()
   end
   
